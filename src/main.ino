@@ -3,6 +3,8 @@
 #include <SPI.h>
 #include <SD.h>
 #include <TinyGPS++.h>
+#include <DHT.h>
+#include <math.h>
 
 #include "TarsStateTracker.h"
 
@@ -15,6 +17,11 @@ namespace Config
   constexpr char SENSOR_CODIGO[] = "TARS-ESP32-001";
 
   constexpr uint8_t POT_PIN = 34;
+  constexpr uint8_t DHT_PIN = 27;
+
+  constexpr uint8_t LED_NORMAL = 25;
+  constexpr uint8_t LED_ATTENTION = 26;
+  constexpr uint8_t LED_CRITICAL = 32;
 
   constexpr uint8_t SD_CS = 5;
   constexpr uint8_t SD_SCK = 18;
@@ -25,6 +32,11 @@ namespace Config
   constexpr uint8_t GPS_TX = 17;
 
   constexpr uint32_t READ_INTERVAL_MS = 40;
+
+  constexpr uint32_t ENV_INTERVAL_MS = 2000;
+
+  constexpr uint32_t SERIAL_INTERVAL_MS = 5000;
+
   constexpr uint32_t RETRY_INTERVAL_MS = 1000;
 
   constexpr double SIMULATED_LAT = -23.550520;
@@ -50,16 +62,12 @@ namespace Config
       "adc\n";
 }
 
-TinyGPSPlus gps;
-HardwareSerial gpsSerial(2);
-TarsStateTracker stateTracker;
-
-uint32_t nextEventId = 1;
-uint32_t lastReadMs = 0;
-uint32_t lastPersistAttemptMs = 0;
-uint32_t sessionNumber = 0;
-
-String sessionCode;
+enum AlertLevel : uint8_t
+{
+  NORMAL = 0,
+  ATTENTION = 1,
+  CRITICAL = 2
+};
 
 struct LocationSnapshot
 {
@@ -69,6 +77,49 @@ struct LocationSnapshot
   String utc;
   const char *source;
 };
+
+TinyGPSPlus gps;
+HardwareSerial gpsSerial(2);
+DHT dht(Config::DHT_PIN, DHT22);
+TarsStateTracker stateTracker;
+
+uint32_t nextEventId = 1;
+uint32_t sessionNumber = 0;
+
+uint32_t lastReadMs = 0;
+uint32_t lastEnvironmentMs = 0;
+uint32_t lastSerialMs = 0;
+uint32_t lastPersistAttemptMs = 0;
+
+String sessionCode;
+
+float temperature = NAN;
+float humidity = NAN;
+
+bool environmentValid = false;
+bool sdReady = false;
+bool pendingHistory = false;
+
+String pendingHistoryRow;
+
+AlertLevel alertLevel = ATTENTION;
+
+const char *alertName(AlertLevel level)
+{
+  switch (level)
+  {
+  case NORMAL:
+    return "NORMAL";
+
+  case ATTENTION:
+    return "ATENCAO";
+
+  case CRITICAL:
+    return "CRITICO";
+  }
+
+  return "DESCONHECIDO";
+}
 
 void eventPath(uint32_t eventId, char (&path)[16])
 {
@@ -85,7 +136,9 @@ bool initializeSession()
 
   if (SD.exists(Config::SESSION_PATH))
   {
-    File file = SD.open(Config::SESSION_PATH, FILE_READ);
+    File file = SD.open(
+        Config::SESSION_PATH,
+        FILE_READ);
 
     if (!file)
       return false;
@@ -95,16 +148,28 @@ bool initializeSession()
   }
 
   if (previousSession == UINT32_MAX)
+  {
     return false;
+  }
 
   sessionNumber = previousSession + 1;
 
-  File file = SD.open(Config::SESSION_PATH, FILE_WRITE);
+  if (SD.exists(Config::SESSION_PATH))
+  {
+    if (!SD.remove(Config::SESSION_PATH))
+    {
+      return false;
+    }
+  }
+
+  File file = SD.open(
+      Config::SESSION_PATH,
+      FILE_WRITE);
 
   if (!file)
     return false;
 
-  const String value = String(sessionNumber);
+  String value = String(sessionNumber);
 
   bool success =
       file.print(value) == value.length();
@@ -131,14 +196,20 @@ bool prepareSd()
       Config::SD_MOSI,
       Config::SD_CS);
 
-  if (!SD.begin(Config::SD_CS, SPI, 4000000U))
+  if (!SD.begin(
+          Config::SD_CS,
+          SPI,
+          4000000U))
+  {
     return false;
+  }
 
   for (
       uint32_t id = 1;
       id <= Config::MAX_EVENT_ID;
       ++id)
   {
+
     char path[16];
     eventPath(id, path);
 
@@ -186,6 +257,7 @@ LocationSnapshot readLocation()
       gps.location.isValid() &&
       gps.location.age() < 5000)
   {
+
     location.valid = true;
     location.latitude = gps.location.lat();
     location.longitude = gps.location.lng();
@@ -197,6 +269,7 @@ LocationSnapshot readLocation()
       gps.date.age() < 5000 &&
       gps.time.age() < 5000)
   {
+
     char buffer[25];
 
     snprintf(
@@ -218,6 +291,94 @@ LocationSnapshot readLocation()
 #endif
 }
 
+void readEnvironment()
+{
+  float newTemperature = dht.readTemperature();
+  float newHumidity = dht.readHumidity();
+
+  if (
+      isnan(newTemperature) ||
+      isnan(newHumidity))
+  {
+
+    environmentValid = false;
+
+    Serial.println(
+        "AVISO: leitura DHT22 invalida.");
+
+    return;
+  }
+
+  temperature = newTemperature;
+  humidity = newHumidity;
+
+  environmentValid = true;
+}
+AlertLevel classifyAlert(int prediction)
+{
+  if (!environmentValid)
+  {
+    return ATTENTION;
+  }
+
+  const bool severeEnvironment =
+      temperature >= 35.0f ||
+      humidity >= 85.0f ||
+      humidity <= 25.0f;
+
+  const bool moderateEnvironment =
+      temperature >= 30.0f ||
+      humidity >= 70.0f ||
+      humidity <= 35.0f;
+
+  if (prediction == 1 && severeEnvironment)
+  {
+    return CRITICAL;
+  }
+
+  if (
+      prediction == 1 ||
+      severeEnvironment ||
+      moderateEnvironment)
+  {
+
+    return ATTENTION;
+  }
+
+  return NORMAL;
+}
+
+void updateActuators()
+{
+  digitalWrite(
+      Config::LED_NORMAL,
+      alertLevel == NORMAL ? HIGH : LOW);
+
+  digitalWrite(
+      Config::LED_ATTENTION,
+      alertLevel == ATTENTION ? HIGH : LOW);
+
+  digitalWrite(
+      Config::LED_CRITICAL,
+      alertLevel == CRITICAL ? HIGH : LOW);
+}
+
+void refreshAlert()
+{
+  AlertLevel newLevel =
+      classifyAlert(stateTracker.state());
+
+  if (newLevel != alertLevel)
+  {
+    alertLevel = newLevel;
+
+    Serial.print("ALERTA_LOCAL:");
+    Serial.println(alertName(alertLevel));
+  }
+
+  updateActuators();
+}
+
 String buildCsvRow(
     uint32_t eventId,
     uint32_t elapsedMs,
@@ -225,6 +386,7 @@ String buildCsvRow(
     int modelOutput,
     const LocationSnapshot &location)
 {
+
   String row;
   row.reserve(240);
 
@@ -250,12 +412,16 @@ String buildCsvRow(
   row += ',';
 
   if (location.valid)
+  {
     row += String(location.latitude, 6);
+  }
 
   row += ',';
 
   if (location.valid)
+  {
     row += String(location.longitude, 6);
+  }
 
   row += ',';
 
@@ -278,6 +444,7 @@ bool writeEventFile(
     uint32_t eventId,
     const String &row)
 {
+
   char path[16];
   eventPath(eventId, path);
 
@@ -294,14 +461,11 @@ bool writeEventFile(
   if (!file)
     return false;
 
-  const size_t headerLength =
+  bool headerOk =
+      file.print(Config::CSV_HEADER) ==
       strlen(Config::CSV_HEADER);
 
-  const bool headerOk =
-      file.print(Config::CSV_HEADER) ==
-      headerLength;
-
-  const bool rowOk =
+  bool rowOk =
       file.print(row) == row.length();
 
   file.flush();
@@ -321,7 +485,7 @@ bool writeEventFile(
 
 bool appendHistory(const String &row)
 {
-  const bool newFile =
+  bool newFile =
       !SD.exists(Config::EVENTS_PATH);
 
   File history = SD.open(
@@ -329,61 +493,125 @@ bool appendHistory(const String &row)
       FILE_APPEND);
 
   if (!history)
-  {
-    Serial.println(
-        "AVISO: historico indisponivel.");
-
     return false;
-  }
 
   bool success = true;
 
   if (newFile)
+  {
     success =
         history.print(Config::CSV_HEADER) ==
         strlen(Config::CSV_HEADER);
+  }
 
   if (success)
+  {
     success =
         history.print(row) == row.length();
+  }
 
   history.flush();
   history.close();
 
-  if (!success)
-    Serial.println(
-        "AVISO: falha ao atualizar EVENTOS.CSV.");
-
   return success;
+}
+
+void printStatus()
+{
+  LocationSnapshot location = readLocation();
+
+  Serial.println();
+  Serial.println("========== TARS ==========");
+
+  Serial.print("sensor_codigo=");
+  Serial.println(Config::SENSOR_CODIGO);
+
+  Serial.print("sessao_coleta=");
+  Serial.println(sessionCode);
+
+  Serial.print("timestamp_ms=");
+  Serial.println(millis());
+
+  Serial.print("previsao_alta=");
+  Serial.println(stateTracker.state());
+
+  Serial.print("classe=");
+  Serial.println(
+      stateTracker.state() == 1
+          ? "ALTA"
+          : "NAO_ALTA");
+
+  Serial.print("nivel_alerta=");
+  Serial.println(alertName(alertLevel));
+
+  Serial.print("temperatura_c=");
+  if (environmentValid)
+  {
+    Serial.println(temperature, 2);
+  }
+  else
+  {
+    Serial.println("INDISPONIVEL");
+  }
+
+  Serial.print("umidade_pct=");
+  if (environmentValid)
+  {
+    Serial.println(humidity, 2);
+  }
+  else
+  {
+    Serial.println("INDISPONIVEL");
+  }
+
+  Serial.print("origem_gps=");
+  Serial.println(location.source);
+
+  Serial.print("gps_valido=");
+  Serial.println(location.valid ? 1 : 0);
+
+  if (location.valid)
+  {
+    Serial.print("latitude=");
+    Serial.println(location.latitude, 6);
+
+    Serial.print("longitude=");
+    Serial.println(location.longitude, 6);
+  }
+
+  Serial.print("sd_disponivel=");
+  Serial.println(sdReady ? 1 : 0);
+
+  Serial.println("==========================");
+  Serial.println();
 }
 
 bool persistTransition(
     uint16_t adc,
     uint32_t nowMs)
 {
+
+  if (!sdReady)
+    return false;
+
   if (nextEventId > Config::MAX_EVENT_ID)
   {
-    Serial.println(
-        "ERRO: limite de eventos atingido.");
-
+    Serial.println("ERRO: limite de eventos.");
     return false;
   }
 
-  const int modelOutput =
+  int modelOutput =
       stateTracker.pendingState();
 
   if (modelOutput != 0 && modelOutput != 1)
   {
-    Serial.println(
-        "ERRO: resultado invalido do modelo.");
-
     return false;
   }
 
-  const LocationSnapshot location =
+  LocationSnapshot location =
       readLocation();
 
-  const String row = buildCsvRow(
+  String row = buildCsvRow(
       nextEventId,
       nowMs,
       adc,
@@ -391,71 +619,45 @@ bool persistTransition(
       location);
 
   if (!writeEventFile(nextEventId, row))
-    return false;
-
-  const bool historySaved = appendHistory(row);
-
-  Serial.println();
-  Serial.println("========== TARS ==========");
-
-  Serial.print("Sensor: ");
-  Serial.println(Config::SENSOR_CODIGO);
-
-  Serial.print("Sessao: ");
-  Serial.println(sessionCode);
-
-  Serial.print("Evento: ");
-  Serial.println(nextEventId);
-
-  Serial.print("Alimento: ");
-  Serial.println(
-      "Definido pelo monitoramento no MySQL");
-
-  Serial.print("Modelo: ");
-  Serial.println("SIMULADO_POTENCIOMETRO");
-
-  Serial.print("Previsao: ");
-  Serial.println(
-      modelOutput == 1
-          ? "ALTA"
-          : "NAO_ALTA");
-
-  Serial.print("ADC: ");
-  Serial.println(adc);
-
-  Serial.print("GPS: ");
-  Serial.println(location.source);
-
-  Serial.print("GPS valido: ");
-  Serial.println(location.valid ? 1 : 0);
-
-  if (location.valid)
   {
-    Serial.print("Latitude: ");
-    Serial.println(location.latitude, 6);
-
-    Serial.print("Longitude: ");
-    Serial.println(location.longitude, 6);
+    return false;
   }
 
-  Serial.print("UTC: ");
-  Serial.println(
-      location.utc.length() > 0
-          ? location.utc
-          : "INDISPONIVEL");
+  if (!appendHistory(row))
+  {
+    Serial.println(
+        "AVISO: historico nao atualizado.");
 
-  Serial.print("Historico atualizado: ");
-  Serial.println(historySaved ? "SIM" : "NAO");
+    pendingHistory = true;
+    pendingHistoryRow = row;
+  }
+
+  Serial.print("EVENTO_CONFIRMADO:");
+  Serial.println(nextEventId);
 
   Serial.print("CSV_ROW:");
   Serial.print(row);
 
-  Serial.println("==========================");
-  Serial.println();
-
   ++nextEventId;
 
   return true;
+}
+
+void retryHistory()
+{
+  if (!sdReady || !pendingHistory)
+  {
+    return;
+  }
+
+  if (appendHistory(pendingHistoryRow))
+  {
+    pendingHistory = false;
+    pendingHistoryRow = "";
+
+    Serial.println(
+        "HISTORICO_RECUPERADO");
+  }
 }
 
 void setup()
@@ -464,7 +666,18 @@ void setup()
   delay(150);
 
   analogReadResolution(12);
+
   pinMode(Config::POT_PIN, INPUT);
+
+  pinMode(Config::LED_NORMAL, OUTPUT);
+  pinMode(Config::LED_ATTENTION, OUTPUT);
+  pinMode(Config::LED_CRITICAL, OUTPUT);
+
+  digitalWrite(Config::LED_NORMAL, LOW);
+  digitalWrite(Config::LED_ATTENTION, LOW);
+  digitalWrite(Config::LED_CRITICAL, LOW);
+
+  dht.begin();
 
 #if !TARS_SIMULATED_GPS
 
@@ -477,111 +690,149 @@ void setup()
 #endif
 
   Serial.println();
-  Serial.println("TARS | Sensor IoT de previsao");
-  Serial.println("-----------------------------");
+  Serial.println("TARS | AICSS Global Solution");
+  Serial.println("ESP32 | CitizenTech");
+  Serial.println("Modelo de IA: SIMULADO");
+  Serial.println("Alimento: arroz");
+  Serial.println();
 
-  Serial.print("Codigo do sensor: ");
-  Serial.println(Config::SENSOR_CODIGO);
+  sdReady = prepareSd();
+
+  if (!sdReady)
+  {
+    Serial.println(
+        "AVISO: microSD indisponivel.");
+    Serial.println(
+        "Alertas locais continuam ativos.");
+  }
+  else
+  {
+    Serial.print("Sessao: ");
+    Serial.println(sessionCode);
+
+    Serial.print("Proximo evento: ");
+    Serial.println(nextEventId);
+  }
 
 #if TARS_SIMULATED_GPS
 
   Serial.println(
-      "GPS: SIMULADO_WOKWI");
-
-  Serial.println(
-      "Coordenadas simuladas; nao representam um fix real.");
+      "GPS: coordenadas ficticias do Wokwi.");
 
 #else
 
   Serial.println(
-      "GPS: NEO6M_UART");
+      "GPS: modulo NEO-6M via UART2.");
 
 #endif
 
-  if (!prepareSd())
-  {
-    Serial.println(
-        "ERRO FATAL: falha ao preparar microSD ou sessao.");
+  uint32_t now = millis();
 
-    while (true)
-      delay(1000);
-  }
-
-  Serial.print("Sessao de coleta: ");
-  Serial.println(sessionCode);
-
-  Serial.print("Proximo evento: ");
-  Serial.println(nextEventId);
-
-  const uint16_t initialAdc =
+  uint16_t initialAdc =
       analogRead(Config::POT_PIN);
 
-  stateTracker.begin(
-      initialAdc,
-      millis());
+  stateTracker.begin(initialAdc, now);
 
-  lastReadMs = millis();
+  readEnvironment();
+  refreshAlert();
 
-  Serial.print("Estado inicial: ");
-  Serial.println(stateTracker.state());
-
-  Serial.println(
-      "Estado inicial nao gera evento.");
+  lastReadMs = now;
+  lastEnvironmentMs = now;
+  lastSerialMs = now;
 
   Serial.println(
-      "Altere o potenciometro e mantenha por 200ms.");
+      "ADC: leitura a cada 40 ms.");
 
   Serial.println(
-      "Cada mudanca gera um CSV individual.");
+      "DHT22: leitura a cada 2000 ms.");
 
   Serial.println(
-      "EVENTOS.CSV acumula as medicoes.");
+      "Serial: estado a cada 5000 ms.");
 
   Serial.println(
-      "CSV_ROW pode ser consumido pelo backend.");
+      "Debounce da classificacao: 200 ms.");
 
-  Serial.println();
+  Serial.println(
+      "O estado inicial nao gera CSV.");
+
+  printStatus();
 }
 
 void loop()
 {
   readGpsBytes();
 
-  const uint32_t nowMs = millis();
+  uint32_t now = millis();
 
   if (
       static_cast<uint32_t>(
-          nowMs - lastReadMs) <
-      Config::READ_INTERVAL_MS)
-    return;
-
-  lastReadMs = nowMs;
-
-  const uint16_t adc =
-      analogRead(Config::POT_PIN);
-
-  if (!stateTracker.transitionReady(adc, nowMs))
-    return;
-
-  if (
-      lastPersistAttemptMs != 0 &&
-      static_cast<uint32_t>(
-          nowMs - lastPersistAttemptMs) <
-          Config::RETRY_INTERVAL_MS)
-
-    return;
-
-  lastPersistAttemptMs = nowMs;
-
-  if (persistTransition(adc, nowMs))
+          now - lastEnvironmentMs) >=
+      Config::ENV_INTERVAL_MS)
   {
-    stateTracker.confirmPersisted();
-    lastPersistAttemptMs = 0;
+
+    lastEnvironmentMs = now;
+
+    readEnvironment();
+    refreshAlert();
   }
-  else
+
+  if (
+      static_cast<uint32_t>(
+          now - lastReadMs) >=
+      Config::READ_INTERVAL_MS)
   {
-    Serial.println(
-        "ERRO: evento nao persistido. "
-        "Nova tentativa em 1 segundo.");
+
+    lastReadMs = now;
+
+    uint16_t adc =
+        analogRead(Config::POT_PIN);
+
+    bool ready =
+        stateTracker.transitionReady(adc, now);
+
+    if (ready)
+    {
+      bool canRetry =
+          lastPersistAttemptMs == 0 ||
+          static_cast<uint32_t>(
+              now - lastPersistAttemptMs) >=
+              Config::RETRY_INTERVAL_MS;
+
+      if (canRetry)
+      {
+        lastPersistAttemptMs = now;
+
+        if (persistTransition(adc, now))
+        {
+          stateTracker.confirmPersisted();
+
+          lastPersistAttemptMs = 0;
+
+          refreshAlert();
+          printStatus();
+        }
+        else
+        {
+          Serial.println(
+              "Falha ao salvar CSV. "
+              "Nova tentativa em 1 segundo.");
+        }
+      }
+    }
+    else
+    {
+      lastPersistAttemptMs = 0;
+    }
+  }
+
+  if (
+      static_cast<uint32_t>(
+          now - lastSerialMs) >=
+      Config::SERIAL_INTERVAL_MS)
+  {
+
+    lastSerialMs = now;
+
+    printStatus();
   }
 }
