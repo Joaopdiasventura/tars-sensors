@@ -1,0 +1,2 @@
+evento,timestamp_ms,timestamp_utc,origem_gps,gps_valido,latitude,longitude,previsao_alta,classe,adc
+1,4812,,SIMULADO_WOKWI,1,-23.550520,-46.633308,1,ALTA,3850

@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "author": "João Paulo Dias",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-c-v4",
+      "id": "esp",
+      "top": -38.4,
+      "left": -235.16,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-slide-potentiometer",
+      "id": "predictionPot",
+      "top": 177.8,
+      "left": 56.6,
+      "attrs": {
+        "value": "0",
+        "travelLength": "100"
+      }
+    },
+    {
+      "type": "wokwi-microsd-card",
+      "id": "sd",
+      "top": 66.77,
+      "left": 109.93,
+      "rotate": 180,
+      "attrs": {}
+    }
+  ],
+  "connections": [
+    [
+      "predictionPot:VCC",
+      "esp:3V3",
+      "red",
+      [
+        "h-359.4",
+        "v-139.2"
+      ]
+    ],
+    [
+      "predictionPot:GND",
+      "esp:GND.1",
+      "black",
+      [
+        "v76.8",
+        "h-849.2",
+        "v-182.4"
+      ]
+    ],
+    [
+      "predictionPot:SIG",
+      "esp:34",
+      "purple",
+      [
+        "h-330.6",
+        "v-169.2"
+      ]
+    ],
+    [
+      "sd:VCC",
+      "esp:3V3",
+      "red",
+      [
+        "h-211.2",
+        "v-144.14",
+        "h-201.6",
+        "v38.4"
+      ]
+    ],
+    [
+      "sd:GND",
+      "esp:GND.1",
+      "black",
+      [
+        "v-0.11",
+        "h-432",
+        "v19.2"
+      ]
+    ],
+    [
+      "sd:CS",
+      "esp:5",
+      "orange",
+      [
+        "h-163.2",
+        "v38.34"
+      ]
+    ],
+    [
+      "sd:SCK",
+      "esp:18",
+      "blue",
+      [
+        "h-163.2",
+        "v-38.39"
+      ]
+    ],
+    [
+      "sd:DO",
+      "esp:19",
+      "green",
+      [
+        "h-220.8",
+        "v-28.91"
+      ]
+    ],
+    [
+      "sd:DI",
+      "esp:23",
+      "yellow",
+      [
+        "h-115.2",
+        "v-47.91"
+      ]
+    ],
+    [
+      "esp:TX",
+      "$serialMonitor:RX",
+      "",
+      []
+    ],
+    [
+      "esp:RX",
+      "$serialMonitor:TX",
+      "",
+      []
+    ]
+  ],
+  "serialMonitor": {
+    "display": "always",
+    "newline": "lf"
+  },
+  "dependencies": {}
+}

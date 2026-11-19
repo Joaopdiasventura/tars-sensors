@@ -1,0 +1,10 @@
+[wokwi]
+version = 1
+elf = ".pio/build/esp32/firmware.elf"
+firmware = ".pio/build/esp32/firmware.bin"
+
+# Recurso Wokwi for VS Code >= 4.0.0: salva os CSVs no PC quando a simulacao termina.
+[[sdcard]]
+folder = "sdcard"
+size = "8M"
+writeback = true
