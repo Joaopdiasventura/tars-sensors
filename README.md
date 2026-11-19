@@ -1,165 +1,464 @@
-# TARS — Sensores GPS e classificação simulada do arroz
+# TARS — Sistema Inteligente de Alerta para Riscos Alimentares
 
-Adaptação independente do projeto [fleet-force-sensors](https://github.com/Joaopdiasventura/fleet-force-sensors), para o **TARS — Tecnologia de Antecipação de Riscos de Suprimentos**.
+**Global Solution 2026.2 — FIAP**  
+**Disciplina:** AI Computer Systems & Sensors (AICSS)  
+**Tema:** CitizenTech — Tecnologia para melhorar a qualidade de vida
 
-Esta versão mantém **somente duas entradas lógicas**: localização GPS e um potenciômetro que representa a **saída binária simulada do modelo**. Remove MPU6050, velocidade, rota controlada por potenciômetro, Wi-Fi, HTTP e telemetria de frota. **Não executa um modelo de IA no ESP32**, nem prevê preço em reais.
+## 1. Visão geral
 
-## O que o protótipo faz
+O TARS (Tecnologia de Antecipação de Riscos de Suprimentos) é uma solução voltada ao planejamento alimentar familiar, com foco na antecipação de possíveis aumentos nos preços de alimentos essenciais.
 
-1. Lê o único potenciômetro (GPIO34) como classe binária: **`0 = NÃO ALTA`**, **`1 = ALTA`**.
-2. Consulta a localização GPS: no **Wokwi** usa coordenadas fixas de **referência simulada**; no hardware real, pode ler um **GPS NEO-6M** por UART2.
-3. Observa a mudança de **classe 0 → 1 ou 1 → 0**. Oscilações do valor analógico que não alteram a classe não geram evento.
-4. Quando a nova classe permanece estável por 200 ms, cria **um arquivo CSV por mudança**, por exemplo `E0000001.CSV`.
-5. Adiciona a mesma linha ao histórico `EVENTOS.CSV` no **microSD**, para análises posteriores.
-6. Exibe o evento no monitor serial. Não depende de API, AWS, SQL ou computador conectado para registrar no cartão, desde que o microSD esteja disponível.
+A proposta considera a utilização de indicadores econômicos, dados agrícolas e informações ambientais para apoiar modelos de Inteligência Artificial capazes de identificar tendências de variação de preços.
 
-> **Atenção:** a variável simulada é **se a variação mensal do IPCA do arroz no próximo mês será positiva**, não se o preço de um pacote específico vai aumentar. A saída binária do potenciômetro **não provém de treinamento/inferência neste firmware**.
+Este repositório apresenta o protótipo embarcado do TARS, desenvolvido com ESP32 e simulado no Wokwi.
 
-## Circuito no Wokwi
+O dispositivo combina uma saída simulada de um modelo preditivo com medições ambientais de temperatura e umidade, classificando o cenário em três níveis de alerta e notificando o usuário localmente por LEDs.
 
-| Componente | Pino | ESP32 DevKit C V4 |
-|---|---|---|
-| Potenciômetro deslizante | SIG | GPIO34 (ADC) |
-| Potenciômetro | VCC / GND | 3V3 / GND |
-| microSD SPI | CS | GPIO5 |
-| microSD SPI | SCK | GPIO18 |
-| microSD SPI | DO (MISO) | GPIO19 |
-| microSD SPI | DI (MOSI) | GPIO23 |
-| microSD SPI | VCC / GND | 3V3 / GND |
+O protótipo também registra mudanças na classificação simulada em arquivos CSV armazenados em cartão microSD.
 
-**Sensores de entrada:** um único potenciômetro; a coordenada GPS é simulada pelo firmware durante a demonstração Wokwi. O microSD é apenas **armazenamento**, não um sensor adicional.
+**Limitação:** nesta versão, o ESP32 não executa um modelo de IA. A saída binária é representada por um potenciômetro, permitindo demonstrar como o dispositivo reagiria ao resultado de uma inferência.
 
-A posição usada no Wokwi é **`-23.550520, -46.633308` (São Paulo)** e é **fictícia para fins de teste**. Ela **não identifica a posição real do dispositivo nem do usuário**.
+## 2. Problema e público beneficiado
 
-### GPS físico opcional
+A oscilação dos preços de alimentos essenciais pode prejudicar o planejamento financeiro de famílias, especialmente daquelas com menor margem orçamentária.
 
-Para obter coordenadas medidas, conecte um módulo **NEO-6M (interface UART NMEA a 9600 baud)**:
+O TARS busca contribuir com a redução da assimetria de informação, tornando sinais de possíveis aumentos mais acessíveis.
 
-| GPS NEO-6M | ESP32 |
-|---|---|
-| TX | GPIO16 (RX2) |
-| RX (opcional) | GPIO17 (TX2) |
-| GND | GND |
-| VCC | Alimentação **conforme a placa do módulo** e seus limites elétricos |
+O público beneficiado inclui:
 
-No `platformio.ini`, altere `-DTARS_SIMULATED_GPS=1` para `-DTARS_SIMULATED_GPS=0` e conecte o módulo físico. **Não se conecta GPS real automaticamente dentro do Wokwi**: o diagrama incluído usa explicitamente a simulação de posição. Se não houver fix GPS válido, os campos latitude/longitude são deixados em branco (`gps_valido=0`); o CSV da mudança de classificação ainda é criado.
+- Famílias que precisam planejar compras de alimentos essenciais.
+- Pessoas com orçamento doméstico limitado.
+- Comunidades interessadas em informações preventivas sobre riscos de abastecimento e preços.
 
-## Executar no VS Code + Wokwi
+O dispositivo representa a camada de alerta local da solução, permitindo comunicar situações relevantes sem depender continuamente de uma interface web.
 
-**Requisitos:** PlatformIO IDE, extensão Wokwi para VS Code **v4.0.0 ou mais recente**, ambiente ESP32 Arduino e biblioteca `TinyGPSPlus` (configurada automaticamente em `platformio.ini`). A simulação Wokwi pode exigir acesso/licença conforme o plano e o ambiente.
+## 3. Objetivos do protótipo
 
-1. Extraia o ZIP e abra a pasta `tars-sensores-gps-arroz` no VS Code.
-2. Instale PlatformIO e a extensão Wokwi; aguarde a resolução das dependências.
-3. Execute **PlatformIO: Build** ou `pio run` na pasta do projeto.
-4. Abra `diagram.json` e inicie **Wokwi: Start Simulator** pela paleta de comandos.
-5. Observe o estado inicial no **Serial Monitor (115200 baud)**.
-6. Deslize o potenciômetro para o outro extremo e mantenha por pelo menos 200 ms.
-7. A cada alternância 0↔1, o ESP32 mostra o nome do novo CSV e cria os registros no cartão.
-8. **Pare a simulação**. Com `writeback = true` em `wokwi.toml`, o conteúdo do microSD é gravado na pasta local `sdcard/` após parar/reiniciar o Wokwi para VS Code. Não espere visualizar os arquivos locais antes de encerrar a simulação.
+- Capturar periodicamente uma classificação binária simulada de variação do preço do arroz.
+- Medir temperatura e umidade utilizando um DHT22.
+- Combinar as entradas em três níveis de alerta: NORMAL, ATENÇÃO e CRÍTICO.
+- Comunicar imediatamente mudanças de nível por LEDs.
+- Disponibilizar medições e estados no Monitor Serial.
+- Registrar mudanças confirmadas da classificação binária em arquivos CSV.
+- Associar os eventos a coordenadas GPS simuladas ou, opcionalmente, obtidas de um módulo físico.
 
-O recurso de *writeback* do microSD depende do **Wokwi para VS Code v4.0.0+**. Veja a documentação oficial: <https://docs.wokwi.com/vscode/project-config#sd-card-contents>.
+## 4. Componentes utilizados
 
-### Como o potenciômetro vira 0 ou 1
+| Componente               | Função                               |
+| ------------------------ | ------------------------------------ |
+| ESP32 DevKit C V4        | Processamento e controle             |
+| Potenciômetro deslizante | Simulação da saída binária do modelo |
+| DHT22                    | Medição de temperatura e umidade     |
+| LED verde                | Indicação NORMAL                     |
+| LED amarelo              | Indicação ATENÇÃO                    |
+| LED vermelho             | Indicação CRÍTICO                    |
+| 3 resistores de 220 Ω    | Limitação de corrente dos LEDs       |
+| Módulo microSD SPI       | Armazenamento dos eventos            |
+| GPS NEO-6M (opcional)    | Localização física por UART          |
+| Monitor Serial           | Observabilidade e diagnóstico        |
 
-A leitura ADC do ESP32 varia aproximadamente entre 0 e 4095. Para evitar alternâncias por ruído:
+O potenciômetro funciona como entrada analógica que simula um resultado externo, e não como sensor econômico real.
 
-- No início, a classificação inicial é 0 para ADC abaixo de 2048 e 1 caso contrário. **A inicialização não gera CSV**, pois não aconteceu uma mudança observada.
-- Em estado 0, valores **≥ 2500** solicitam mudança para 1.
-- Em estado 1, valores **≤ 1600** solicitam mudança para 0.
-- A mudança precisa permanecer observável por **200 ms** (debounce).
-- No intervalo intermediário, a classe anterior é mantida (histerese).
-- A classe só é confirmada quando **o CSV individual** foi gravado. Se a escrita falhar, há aviso serial e tentativa posterior. Falhas de hardware, energia e cartão não podem receber garantia absoluta de persistência.
+O DHT22 fornece medições ambientais efetivas dentro da simulação.
 
-Portanto, a cada **mudança de classe confirmada** há um CSV. Movimentos que permaneçam dentro da mesma classe não geram arquivos adicionais.
+As coordenadas GPS do Wokwi são fixas e simuladas, não correspondendo a uma leitura real de posicionamento.
 
-## Arquivos CSV gerados
+## 5. Arquitetura
 
-Arquivos no microSD (`sdcard/` após encerrar a simulação):
+O funcionamento é dividido em cinco etapas:
+
+1. Aquisição das entradas pelo ESP32.
+2. Tratamento da classificação simulada com histerese e debounce.
+3. Classificação do nível de alerta utilizando temperatura, umidade e resultado binário.
+4. Comunicação do alerta por LEDs e Monitor Serial.
+5. Persistência das mudanças binárias em arquivos CSV no microSD.
+
+Fluxo simplificado:
+
+```text
+Potenciômetro ──> ADC GPIO34 ──> Histerese/Debounce ──┐
+                                                       │
+DHT22 ──────────> Temperatura/Umidade ──────────────────┤
+                                                       ▼
+                                                Classificação
+                                                       │
+                                          ┌────────────┼────────────┐
+                                          ▼            ▼            ▼
+                                       NORMAL       ATENÇÃO       CRÍTICO
+                                      LED verde   LED amarelo   LED vermelho
+
+Mudanças binárias confirmadas:
+Potenciômetro → ESP32 → GPS → CSV → microSD
+
+Monitoramento:
+ESP32 → Monitor Serial
+```
+
+O GPS fornece contexto geográfico para os eventos persistidos, mas não participa das regras de classificação de alerta.
+
+## 6. Sensores e justificativa
+
+### 6.1 Potenciômetro — classificação simulada
+
+O potenciômetro representa a saída de um modelo preditivo externo.
+
+- `0`: não há previsão de alta.
+- `1`: há previsão de alta.
+
+A variável representada é a possível variação positiva do IPCA do arroz no mês seguinte, e não o preço de um produto específico.
+
+O ESP32 lê valores ADC entre aproximadamente 0 e 4095.
+
+Para reduzir oscilações:
+
+| Condição            | Regra                        |
+| ------------------- | ---------------------------- |
+| Estado inicial      | ADC >= 2048 representa 1     |
+| Mudança de 0 para 1 | ADC >= 2500                  |
+| Mudança de 1 para 0 | ADC <= 1600                  |
+| Confirmação         | Candidato estável por 200 ms |
+
+A região intermediária mantém a classificação anterior, aplicando histerese.
+
+A mudança de classe é confirmada somente depois que seu CSV individual é gravado com sucesso.
+
+### 6.2 DHT22 — temperatura e umidade
+
+O DHT22 mede duas variáveis ambientais:
+
+- Temperatura em graus Celsius.
+- Umidade relativa em porcentagem.
+
+Essas variáveis são utilizadas como indicadores ambientais complementares para a classificação de alertas.
+
+Temperatura e umidade podem ser relevantes para condições de armazenamento e conservação, mas não determinam isoladamente a variação futura dos preços do arroz.
+
+Os limites de alerta são regras experimentais do protótipo e não representam limites agronômicos ou previsões econômicas cientificamente validadas.
+
+### 6.3 GPS — contexto de localização
+
+No modo Wokwi, o dispositivo utiliza a posição fictícia:
+
+- Latitude: -23.550520
+- Longitude: -46.633308
+
+Essa localização é uma referência simulada na cidade de São Paulo.
+
+O código também disponibiliza suporte a um módulo GPS NEO-6M conectado por UART2.
+
+Para utilizar o GPS físico, alterar no `platformio.ini`:
+
+```ini
+build_flags =
+    -DTARS_SIMULATED_GPS=0
+```
+
+A montagem atual do Wokwi não inclui módulo GPS físico ou virtual conectado por UART.
+
+## 7. Classificação dos alertas
+
+O sistema utiliza três níveis:
+
+### NORMAL — LED verde
+
+Ativado quando:
+
+- Previsão de alta = 0.
+- Temperatura abaixo de 30 °C.
+- Umidade acima de 35% e abaixo de 70%.
+- Medições ambientais válidas.
+
+Representa ausência de condições de alerta pelas regras configuradas.
+
+### ATENÇÃO — LED amarelo
+
+Ativado quando ocorre pelo menos uma das condições:
+
+- Previsão de alta = 1, sem condição ambiental severa.
+- Temperatura >= 30 °C.
+- Umidade >= 70%.
+- Umidade <= 35%.
+
+Também é utilizado quando o DHT22 não apresenta leitura válida.
+
+Uma condição ambiental severa acompanhada de previsão de alta passa a ser CRÍTICO.
+
+### CRÍTICO — LED vermelho
+
+Ativado quando existe previsão de alta (`1`) combinada com pelo menos uma condição ambiental severa:
+
+- Temperatura >= 35 °C.
+- Umidade >= 85%.
+- Umidade <= 25%.
+
+Essa combinação representa o nível máximo de atenção definido para o protótipo.
+
+### Exemplos de classificação
+
+| Previsão | Temperatura | Umidade | Alerta  |
+| -------- | ----------- | ------- | ------- |
+| 0        | 25 °C       | 55%     | NORMAL  |
+| 1        | 25 °C       | 55%     | ATENÇÃO |
+| 0        | 32 °C       | 55%     | ATENÇÃO |
+| 0        | 36 °C       | 55%     | ATENÇÃO |
+| 1        | 36 °C       | 55%     | CRÍTICO |
+| 1        | 25 °C       | 90%     | CRÍTICO |
+| 1        | 25 °C       | 20%     | CRÍTICO |
+
+A classificação não equivale a uma probabilidade de aumento do preço, nem a uma previsão validada de perda agrícola.
+
+## 8. Periodicidade das medições
+
+O projeto emprega intervalos independentes para acompanhar cada variável conforme seu comportamento.
+
+| Operação                       | Intervalo |
+| ------------------------------ | --------- |
+| Leitura ADC                    | 40 ms     |
+| Confirmação da transição       | 200 ms    |
+| Leitura DHT22                  | 2.000 ms  |
+| Relatório Serial               | 5.000 ms  |
+| Nova tentativa de persistência | 1.000 ms  |
+
+### ADC — 40 ms
+
+A leitura ocorre 25 vezes por segundo, proporcionando resposta rápida a alterações feitas no potenciômetro durante a demonstração.
+
+Como a entrada representa um resultado binário, não há necessidade de amostragem analógica de frequência elevada.
+
+### Debounce — 200 ms
+
+A transição precisa permanecer estável por 200 ms antes de ser considerada válida.
+
+Esse mecanismo evita registrar eventos ocasionados por oscilações momentâneas ou ruído do ADC.
+
+O intervalo corresponde a aproximadamente cinco ciclos de leitura de 40 ms.
+
+### DHT22 — 2.000 ms
+
+O DHT22 possui frequência limitada de atualização, sendo adequado utilizar um intervalo de pelo menos aproximadamente dois segundos entre novas leituras.
+
+Temperatura e umidade normalmente apresentam mudanças mais lentas do que a interação do usuário com o potenciômetro.
+
+Por isso, o intervalo preserva a qualidade da amostragem sem consultar o sensor desnecessariamente.
+
+### Serial — 5.000 ms
+
+O relatório periódico a cada cinco segundos reduz o volume de mensagens e facilita a interpretação dos dados.
+
+Mudanças confirmadas de classificação e alterações no nível de alerta também podem produzir mensagens adicionais, sem aguardar o próximo relatório periódico.
+
+### Persistência — 1.000 ms
+
+Quando a gravação de um evento falha, o firmware utiliza intervalo de um segundo para uma nova tentativa.
+
+Isso evita repetir continuamente a operação de escrita em caso de indisponibilidade do cartão.
+
+## 9. Monitor Serial
+
+O projeto utiliza comunicação UART a 115200 baud.
+
+Os relatórios periódicos apresentam dados em formato textual `chave=valor`, facilitando a leitura humana e a identificação dos campos.
+
+Exemplo ilustrativo:
+
+```text
+========== TARS ==========
+sensor_codigo=TARS-ESP32-001
+sessao_coleta=TARS-ESP32-001-S1
+timestamp_ms=5000
+previsao_alta=1
+classe=ALTA
+nivel_alerta=ATENCAO
+temperatura_c=25.00
+umidade_pct=55.00
+origem_gps=SIMULADO_WOKWI
+gps_valido=1
+latitude=-23.550520
+longitude=-46.633308
+sd_disponivel=1
+==========================
+```
+
+O formato foi escolhido por ser simples, legível e adequado para demonstração e diagnóstico.
+
+Não é necessário transmitir dados pela rede para acompanhar as medições locais.
+
+## 10. Armazenamento em CSV
+
+O módulo microSD armazena as transições confirmadas da classificação binária.
+
+Cada mudança gera um arquivo individual:
 
 ```text
 sdcard/
-├── E0000001.CSV       # primeira mudanca registrada
-├── E0000002.CSV       # segunda mudanca registrada
-├── E0000003.CSV       # ...
-└── EVENTOS.CSV        # historico acumulado
+├── E0000001.CSV
+├── E0000002.CSV
+├── E0000003.CSV
+├── EVENTOS.CSV
+└── SESSAO.TXT
 ```
 
-Cabeçalho:
+- `E0000001.CSV`: dados da primeira mudança registrada.
+- `EVENTOS.CSV`: histórico consolidado dos eventos.
+- `SESSAO.TXT`: identificador incremental de sessões de coleta.
+
+O cabeçalho atual é:
 
 ```csv
-evento,timestamp_ms,timestamp_utc,origem_gps,gps_valido,latitude,longitude,previsao_alta,classe,adc
+sensor_codigo,sessao_coleta,evento,timestamp_ms,timestamp_utc,origem_gps,gps_valido,latitude,longitude,previsao_alta,classe,adc
 ```
 
-Exemplo **ilustrativo, não uma coleta real** (também disponível em `exemplos/EXEMPLO_EVENTO.csv`):
+O timestamp em milissegundos representa o tempo desde a inicialização do ESP32.
 
-```csv
-evento,timestamp_ms,timestamp_utc,origem_gps,gps_valido,latitude,longitude,previsao_alta,classe,adc
-1,4812,,SIMULADO_WOKWI,1,-23.550520,-46.633308,1,ALTA,3850
-```
+A data e hora UTC somente estarão disponíveis quando houver informações válidas de um GPS físico.
 
-- `evento`: identificador incremental, preservado entre reinicializações ao detectar os arquivos existentes no cartão.
-- `timestamp_ms`: milissegundos desde a inicialização atual do ESP32 (não é data/hora civil).
-- `timestamp_utc`: informado somente quando há data/hora GPS físicas válidas; fica vazio em modo simulado.
-- `origem_gps`: `SIMULADO_WOKWI` ou `NEO6M_UART`.
-- `gps_valido`: 1 indica que há coordenadas disponíveis (inclusive simuladas); 0 indica ausência de fix real.
-- `latitude`/`longitude`: posição de referência simulada ou posição do módulo real, conforme `origem_gps`.
-- `previsao_alta`: saída binária simulada 0/1, não um score de confiança.
-- `classe`: `ALTA` ou `NAO_ALTA`.
-- `adc`: valor analógico original da transição.
+**Observação:** os arquivos CSV representam mudanças da classificação simulada. As medições de temperatura, umidade e o nível de alerta são exibidos no Serial, mas não fazem parte do CSV atual.
 
-O arquivo `EVENTOS.CSV` é conveniente para futuramente importar dados no SQL ou processá-los em AWS, mas **esta versão não faz integração com banco ou nuvem**. O arquivo individual de cada evento é a evidência primária. Se houver falha isolada ao acrescentar o histórico, o firmware mantém o arquivo do evento e registra aviso no serial.
+O armazenamento é local e não depende de conectividade com AWS ou banco de dados.
 
-## Inspecionar os dados
+## 11. Montagem e execução
 
-Após encerrar a simulação:
+### Ferramentas
+
+- Visual Studio Code.
+- PlatformIO.
+- Extensão Wokwi para VS Code.
+- Ambiente ESP32 Arduino.
+- Bibliotecas TinyGPSPlus, DHT Sensor Library e Adafruit Unified Sensor.
+
+### Compilação
+
+Na pasta do projeto:
 
 ```bash
-python tools/conferir_csv.py sdcard
+pio run
 ```
 
-O script verifica os cabeçalhos, a consistência entre nome de arquivo e identificador e se há divergência entre os arquivos individuais e `EVENTOS.CSV`.
+### Simulação
 
-## Testes
+1. Abrir o projeto no VS Code.
+2. Compilar com PlatformIO.
+3. Executar o simulador Wokwi.
+4. Abrir o Monitor Serial.
+5. Observar o LED correspondente à classificação inicial.
+6. Alterar o potenciômetro.
+7. Modificar temperatura e umidade do DHT22.
+8. Verificar a mudança dos LEDs.
+9. Verificar as mensagens no Serial.
+10. Encerrar a simulação para recuperar os dados do microSD.
 
-A máquina de estados 0/1 fica em `include/TarsStateTracker.h` e não depende do framework Arduino. Com `g++` ou `clang++` disponível:
+O `wokwi.toml` habilita `writeback = true`, permitindo disponibilizar os arquivos do cartão no diretório local após a finalização da simulação, conforme o suporte da versão utilizada do Wokwi.
+
+## 12. Cenários de teste
+
+Os seguintes cenários permitem demonstrar os requisitos funcionais.
+
+| Cenário | Previsão | Temperatura | Umidade | Resultado esperado |
+| ------- | -------- | ----------- | ------- | ------------------ |
+| 1       | 0        | 25 °C       | 55%     | LED verde          |
+| 2       | 1        | 25 °C       | 55%     | LED amarelo        |
+| 3       | 1        | 36 °C       | 55%     | LED vermelho       |
+| 4       | 0        | 36 °C       | 55%     | LED amarelo        |
+| 5       | 1        | 25 °C       | 90%     | LED vermelho       |
+| 6       | 0        | 25 °C       | 55%     | LED verde          |
+
+**Esses são cenários previstos para validação, não evidências de testes executados.**
+
+Para avaliar a gravação CSV, alternar o potenciômetro entre os extremos e verificar a criação de arquivos individuais.
+
+A alteração isolada de temperatura e umidade pode modificar o LED, mas não gera um novo arquivo CSV.
+
+## 13. Testes automatizados
+
+O projeto contém testes para a lógica de transição binária.
+
+Executar:
 
 ```bash
 python tools/testar_estado.py
 ```
 
-O teste cobre 0→1→0, debounce, histerese, ausência de confirmação antes da escrita do CSV, tentativa posterior e estouro de `millis()`.
+O teste verifica:
 
-**Limite da validação:** o teste acima valida a lógica de transições. Ainda é necessário compilar com PlatformIO e executar o Wokwi ou hardware físico para validar o firmware completo, montagem SPI, GPS UART e gravação real no microSD.
+- Transições 0 → 1 → 0.
+- Histerese.
+- Debounce.
+- Confirmação condicionada à persistência.
+- Comportamento com estouro de `millis()`.
 
-## Organização
+A validação completa depende adicionalmente da compilação do firmware e execução do circuito.
+
+O validador CSV presente no repositório precisa ser atualizado para o cabeçalho atual antes de ser utilizado como evidência da versão entregue.
+
+## 14. Relação com os ODS
+
+### ODS 2 — Fome Zero e Agricultura Sustentável
+
+O TARS busca apoiar o planejamento alimentar por meio da disponibilização de informações preventivas sobre possíveis aumentos nos preços de alimentos essenciais.
+
+### ODS 12 — Consumo e Produção Responsáveis
+
+A solução busca contribuir para decisões de compra mais planejadas e para a conscientização sobre condições que podem influenciar o abastecimento e a conservação dos alimentos.
+
+Essas relações representam a contribuição pretendida pelo projeto, não impactos já mensurados.
+
+## 15. Inovação e evolução futura
+
+O diferencial proposto é integrar informações econômicas e ambientais a um dispositivo embarcado simples e de baixo custo.
+
+O protótipo demonstra o funcionamento local de alertas, utilizando uma saída preditiva simulada.
+
+Uma evolução possível consiste em embarcar um modelo de Machine Learning compacto no ESP32, após avaliar:
+
+- Compatibilidade do modelo com o microcontrolador.
+- Consumo de memória.
+- Latência da inferência.
+- Qualidade preditiva.
+- Consumo energético.
+- Custo de operação.
+
+A execução de inferência embarcada não faz parte desta implementação.
+
+## 16. Limitações conhecidas
+
+- A saída do modelo é simulada por potenciômetro.
+- O ESP32 não realiza treinamento ou inferência de IA.
+- O GPS do Wokwi utiliza coordenadas fixas.
+- A simulação não representa dados ambientais medidos em campo.
+- Os limiares ambientais são experimentais.
+- As regras de alerta não representam um modelo validado de previsão econômica ou risco agrícola.
+- As mudanças de nível ambiental não são registradas como eventos CSV.
+- A confirmação da transição binária depende da disponibilidade do armazenamento.
+- O sistema não possui envio direto para APIs ou serviços em nuvem.
+- Falhas elétricas ou interrupções durante a escrita podem comprometer dados.
+- A validação final requer execução do circuito no Wokwi ou hardware físico.
+
+## 17. Estrutura do repositório
 
 ```text
-tars-sensores-gps-arroz/
-├── src/main.ino                   # firmware ESP32
-├── include/TarsStateTracker.h     # logica das transicoes 0/1
-├── diagram.json                   # circuito Wokwi (1 potenciometro + microSD)
-├── platformio.ini                 # compilacao ESP32 + TinyGPSPlus
-├── wokwi.toml                     # simulador + SD writeback
-├── sdcard/                        # CSVs do ESP32 apos simulacao
-├── tests/test_state_tracker.cpp   # teste da maquina de estados
-├── tools/testar_estado.py         # compilacao e execucao do teste
-├── tools/conferir_csv.py          # verificacao dos CSVs
-└── exemplos/EXEMPLO_EVENTO.csv    # somente ilustrativo
+tars-sensors/
+├── src/
+│   └── main.ino
+├── include/
+│   └── TarsStateTracker.h
+├── tests/
+│   ├── test_state_tracker.cpp
+│   └── test_csv_validator.py
+├── tools/
+│   ├── testar_estado.py
+│   └── conferir_csv.py
+├── exemplos/
+│   └── EXEMPLO_EVENTO.csv
+├── diagram.json
+├── platformio.ini
+├── wokwi.toml
+└── README.md
 ```
 
-## Papel desta solução no TARS
+## 18. Considerações finais
 
-Este firmware é um **protótipo de dispositivo de alerta**. O potenciômetro permite simular uma resposta de modelo que ainda não foi embarcado. Um possível trabalho futuro é converter e validar um modelo apropriado para execução local (*TinyML*) no ESP32, verificando memória, latência e qualidade preditiva; isso **não está implementado** nesta entrega.
+O TARS Sensors demonstra um fluxo embarcado de aquisição de entradas, tratamento de sinais, classificação de situações e alerta local.
 
-Para o contexto acadêmico, os dados NASA POWER/CERES e os indicadores econômicos continuam no pipeline científico do TARS. **O ESP32 desta demonstração não consulta essas fontes**, não executa o classificador KNN/MLP e não consegue estimar o preço do arroz.
+O protótipo utiliza ESP32, potenciômetro, DHT22, LEDs e armazenamento microSD para representar uma aplicação CitizenTech voltada ao planejamento alimentar.
 
-## Diferenças em relação ao fleet-force-sensors original
-
-| Versão original | Versão TARS |
-|---|---|
-| MPU6050 aceleração/giroscópio | Removido |
-| Potenciômetro para progresso GPS e outro para velocidade | Um único potenciômetro para classe 0/1 |
-| GPS dependente de rota simulada pelo potenciômetro | GPS de referência fixa no Wokwi; GPS UART real opcional |
-| Wi-Fi, HTTPS, envio periódico para API | Removidos |
-| Telemetria a cada 5 s | Eventos somente em transições estáveis |
-| Dados JSON de frota | Um CSV por evento e histórico CSV no microSD |
+A solução implementada demonstra a infraestrutura necessária para receber uma classificação preditiva e transformá-la em alertas locais, preservando a distinção entre dados ambientais, resultados simulados e funcionalidades futuras de Inteligência Artificial.
