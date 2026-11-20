@@ -1,0 +1,2 @@
+sensor_codigo,sessao_coleta,evento,timestamp_ms,timestamp_utc,origem_gps,gps_valido,latitude,longitude,previsao_alta,classe,adc
+TARS-ESP32-001,TARS-ESP32-001-S1,2,29616,,SIMULADO_WOKWI,1,-23.550520,-46.633308,0,NAO_ALTA,0

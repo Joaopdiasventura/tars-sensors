@@ -1,0 +1,2 @@
+SHA-256 do arquivo: 9a14672469254044fe939bc27b5480a69ef2da067545f8ab2471c354ee1799a1
+ARQUIVO ALTERADO: o hash nao confere com o registrado. Nada foi processado.

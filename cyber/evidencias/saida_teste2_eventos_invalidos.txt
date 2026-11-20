@@ -1,0 +1,9 @@
+Linhas validas: 2
+Linhas recusadas: 4
+  linha 3 -> adc fora da faixa possivel (0 a 4095) | TARS-ESP32-001,TARS-ESP32-001-S9,2,12000,,SIMULADO_WOKWI,1,-23.550520,-46.633308,1,ALTA,5000
+  linha 4 -> classe nao concorda com a previsao | TARS-ESP32-001,TARS-ESP32-001-S9,3,14000,,SIMULADO_WOKWI,1,-23.550520,-46.633308,1,NAO_ALTA,3700
+  linha 5 -> gps valido sem latitude ou longitude | TARS-ESP32-001,TARS-ESP32-001-S9,4,16000,,SIMULADO_WOKWI,1,,,0,NAO_ALTA,100
+  linha 6 -> coordenada fora dos limites geograficos | TARS-ESP32-001,TARS-ESP32-001-S9,5,18000,,SIMULADO_WOKWI,1,123.400000,-46.633308,0,NAO_ALTA,200
+Eventos aceitos: 2 | ALTA: 1
+  evento 1 ALTA adc 3895 posicao publica -23.55 -46.63
+  evento 6 NAO_ALTA adc 0 posicao publica -23.55 -46.63
