@@ -1,0 +1,10 @@
+Linhas validas: 2
+Linhas recusadas: 5
+  linha 3 -> sensor nao cadastrado | HACK-001,TARS-ESP32-001-S8,2,12000,,SIMULADO_WOKWI,1,-23.550520,-46.633308,1,ALTA,3900
+  linha 4 -> sensor nao cadastrado | TARS-ESP32-001'; DROP TABLE MEDICAO;--,TARS-ESP32-001-S8,3,14000,,SIMULADO_WOKWI,1,-23.550520,-46.633308,1,ALTA,3900
+  linha 5 -> formato errado: esperados 12 campos | TARS-ESP32-001,TARS-ESP32-001-S8,4,16000,,SIMULADO_WOKWI,1,-23.550520,-46.633308,0,NAO_ALTA,100,campo-extra
+  linha 6 -> evento repetido com valores diferentes | TARS-ESP32-001,TARS-ESP32-001-S8,1,18000,,SIMULADO_WOKWI,1,-23.550520,-46.633308,0,NAO_ALTA,50
+  linha 7 -> timestamp_ms regrediu dentro da mesma sessao | TARS-ESP32-001,TARS-ESP32-001-S8,5,9000,,SIMULADO_WOKWI,1,-23.550520,-46.633308,0,NAO_ALTA,60
+Eventos aceitos: 2 | ALTA: 1
+  evento 1 ALTA adc 3895 posicao publica -23.55 -46.63
+  evento 6 NAO_ALTA adc 0 posicao publica -23.55 -46.63

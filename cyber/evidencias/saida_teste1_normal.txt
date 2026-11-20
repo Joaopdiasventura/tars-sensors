@@ -1,0 +1,11 @@
+SHA-256 do arquivo: a17afada45bbf7e7347d280de83fe6f015c869cf544352ff7b3254be1c23e79b
+Integridade confere com o hash registrado.
+Linhas validas: 6
+Linhas recusadas: 0
+Eventos aceitos: 6 | ALTA: 3
+  evento 1 ALTA adc 3895 posicao publica -23.55 -46.63
+  evento 2 NAO_ALTA adc 0 posicao publica -23.55 -46.63
+  evento 3 ALTA adc 3651 posicao publica -23.55 -46.63
+  evento 4 NAO_ALTA adc 1289 posicao publica -23.55 -46.63
+  evento 5 ALTA adc 4071 posicao publica -23.55 -46.63
+  evento 6 NAO_ALTA adc 0 posicao publica -23.55 -46.63
